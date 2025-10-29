@@ -1,0 +1,2 @@
+"""GNN training package initializer."""
+
