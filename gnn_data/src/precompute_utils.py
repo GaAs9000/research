@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 import os
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Any
 import hashlib
 from collections import defaultdict, deque
 
@@ -175,7 +175,6 @@ def generate_stable_sample_id(
     tie_buses: np.ndarray,
     tie_corridors: np.ndarray,
     node_pq: np.ndarray,
-    pq_prior: Optional[np.ndarray] = None
 ) -> str:
     """
     生成稳定的样本ID，用于去重和互斥校验
@@ -186,7 +185,6 @@ def generate_stable_sample_id(
         tie_buses: 边界母线
         tie_corridors: 走廊定义
         node_pq: 节点P/Q负荷
-        pq_prior: 可选的PQ先验
         
     Returns:
         样本ID的SHA1哈希值
@@ -199,9 +197,6 @@ def generate_stable_sample_id(
         np.asarray(tie_corridors).tobytes(),
         np.asarray(node_pq).tobytes(),
     ]
-    
-    if pq_prior is not None:
-        components.append(np.asarray(pq_prior).tobytes())
     
     # 计算SHA1哈希
     hasher = hashlib.sha1()
@@ -454,11 +449,9 @@ def add_precomputed_fields(
     
     # 3. 生成稳定样本ID
     node_pq = node_features[:, 0:2]
-    pq_prior = data.pq_prior.cpu().numpy() if hasattr(data, 'pq_prior') else None
-    
     sample_id = generate_stable_sample_id(
         case_id, k, tie_buses, data.tie_corridors.cpu().numpy(), 
-        node_pq, pq_prior
+        node_pq
     )
     data.sample_id = sample_id
     

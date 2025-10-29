@@ -5,7 +5,7 @@
 - 完全对齐 V1.1 数据：字段、方向、单位（p.u.）与口径一致。
 
 ## 数据接口（V1.1）
-- 节点 `x [N,20]`：基础4列 + 发电机6列 + 预计算特征10列，支持区域守恒损失 (Q先验已移除)。
+- 节点 `x [N,20]`：基础4列 + 发电机6列 + 预计算特征10列，支持区域守恒损失（先验已移除）。
 - 边 `edge_attr [E,10]`：`[R, X_eff, S_max, is_tie, edge_type(0/1), shift, Pdc, Pdc_ratio, b_fr, b_to]`。
 - 边界对象：`tie_buses [B]`、`tie_corridors [C,2] (u<v)`、`tie_edge_corridor [E]`（非联络边为 -1）。
 - 标签：`y_bus_pq [B,2]`（耦合母线本端净注入），`y_corridor_pfqt [C,4]`（走廊端口聚合，[pf_u, pt_v, qf_u, qt_v]）。
@@ -15,7 +15,6 @@
 - 物理守护：四合一损失（端口监督 + 母线一致性 + 容量守护 + 区域守恒）。
 - 相关参数：`pq_capacity_alpha`，`pq_lambda_S_init`。（注意：`pq_lambda_pair_init`已废弃，因为走廊有损耗）
 - 环形汇总：`ring_k/ring_decay/ring_use_decayed`（默认 K=3，decay=0.5）。
-- 先验残差：默认仅 P 先验，Q 先验关闭（`pq_use_p_prior=True, pq_use_q_prior=False, pq_prior_dropout=0.2`）。数据必须提供 `pq_prior[B,2]`，第二列可全 0。
 - 大 batch 默认：`batch_size=8, accum_steps=2`，损失按“逐图均值→跨图均值”公平聚合（见下）。
 - 加速默认：`use_compile=True, compile_mode='reduce-overhead'`、`pin_memory=True, persistent_workers=True, prefetch_factor=4`、AMP=bf16。
 

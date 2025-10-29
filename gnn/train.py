@@ -153,17 +153,23 @@ def compute_loss_vtheta(pred, batch, config, rank=0):
 
     # ========== 1. 电压损失：Huber(V_pred, y_bus_V) ==========
     V_pred = pred['V_pred']  # [B]
-    y_V = batch.y_bus_V.to(device)  # [B]
+    y_V = batch.y_bus_V
+    if y_V.device != device:
+        y_V = y_V.to(device, non_blocking=True)  # [B]
     loss_V = F.huber_loss(V_pred, y_V, delta=0.01)
 
     # ========== 2. 相角差损失：MSE(sincos_pred, y_edge_sincos) ==========
     sincos_pred = pred['sincos_pred']  # [E_tie, 2]
-    y_sincos = batch.y_edge_sincos.to(device)  # [E_tie, 2]
+    y_sincos = batch.y_edge_sincos
+    if y_sincos.device != device:
+        y_sincos = y_sincos.to(device, non_blocking=True)  # [E_tie, 2]
     loss_theta = F.mse_loss(sincos_pred, y_sincos)
 
     # ========== 3. 功率重构一致性损失：L1(edge_pq, y_edge_pq) ==========
     edge_pq_pred = pred['edge_pq']  # [E_tie, 4]
-    y_edge_pq = batch.y_edge_pq.to(device)  # [E_tie, 4]
+    y_edge_pq = batch.y_edge_pq
+    if y_edge_pq.device != device:
+        y_edge_pq = y_edge_pq.to(device, non_blocking=True)  # [E_tie, 4]
     loss_recon = F.l1_loss(edge_pq_pred, y_edge_pq)
 
     # ========== 总损失 ==========
@@ -188,7 +194,9 @@ def compute_loss_vtheta(pred, batch, config, rank=0):
 
         # 获取每条线的容量上限
         if hasattr(batch, 'tie_edge_indices') and batch.tie_edge_indices is not None:
-            tie_edge_indices = batch.tie_edge_indices.to(device)
+            tie_edge_indices = batch.tie_edge_indices
+            if tie_edge_indices.device != device:
+                tie_edge_indices = tie_edge_indices.to(device, non_blocking=True)
             S_max = batch.edge_attr[tie_edge_indices, 2]  # edge_attr[:, 2] = S_max
         else:
             # 回退：使用默认值
@@ -231,10 +239,13 @@ def train_epoch_simple(model, train_loader, optimizer, supervised_loss_fn, epoch
     model.train()
     
     # AMP和梯度累积设置
-    use_amp = getattr(cfg, 'amp', False)
+    use_amp = getattr(cfg, 'use_amp', False)
     amp_dtype = torch.bfloat16 if getattr(cfg, 'amp_dtype', 'fp16') == 'bf16' else torch.float16
     scaler = torch.amp.GradScaler('cuda', enabled=use_amp and amp_dtype == torch.float16)
     accum_steps = getattr(cfg, 'accum_steps', 1)
+    clip_params = [param for group in optimizer.param_groups for param in group['params']]
+    enable_param_nan_check = getattr(cfg, 'enable_nan_param_check', False)
+    named_params = list(model.named_parameters()) if enable_param_nan_check else ()
     
     losses = []
     v_losses = []
@@ -364,10 +375,7 @@ def train_epoch_simple(model, train_loader, optimizer, supervised_loss_fn, epoch
             if amp_dtype == torch.float16:
                 # 梯度裁剪（统一裁剪所有参数组）
                 scaler.unscale_(optimizer)
-                all_params = []
-                for group in optimizer.param_groups:
-                    all_params += group['params']
-                torch.nn.utils.clip_grad_norm_(all_params, cfg.grad_clip)
+                torch.nn.utils.clip_grad_norm_(clip_params, cfg.grad_clip)
                 
                 # 移除了physics_alpha相关的梯度限制
                 
@@ -376,10 +384,7 @@ def train_epoch_simple(model, train_loader, optimizer, supervised_loss_fn, epoch
                 scaler.update()
             else:
                 # bf16不需要scaler；同样裁剪所有参数组
-                all_params = []
-                for group in optimizer.param_groups:
-                    all_params += group['params']
-                torch.nn.utils.clip_grad_norm_(all_params, cfg.grad_clip)
+                torch.nn.utils.clip_grad_norm_(clip_params, cfg.grad_clip)
                 
                 # 移除了physics_alpha相关的梯度限制
                 
@@ -393,20 +398,21 @@ def train_epoch_simple(model, train_loader, optimizer, supervised_loss_fn, epoch
             # 移除了physics_alpha参数约束
             
             # === 参数NaN检测 ===
-            nan_params = []
-            for name, param in model.named_parameters():
-                if torch.isnan(param).any():
-                    nan_params.append(name)
-                elif torch.isinf(param).any():
-                    nan_params.append(f"{name}(Inf)")
-            
-            if nan_params and rank == 0:  # 只在rank0记录
-                logger.error(f"参数变成NaN/Inf: {', '.join(nan_params[:5])}{'...' if len(nan_params) > 5 else ''}")
-                logger.error(f"在 epoch {epoch}, batch {batch_idx} 参数更新后发现异常")
-                # 检查梯度范数
-                grad_norm = torch.nn.utils.clip_grad_norm_(all_params, float('inf'))
-                logger.error(f"梯度范数: {grad_norm:.6f}")
-                # 可以选择提前终止或者重置参数
+            if enable_param_nan_check:
+                nan_params = []
+                for name, param in named_params:
+                    if torch.isnan(param).any():
+                        nan_params.append(name)
+                    elif torch.isinf(param).any():
+                        nan_params.append(f"{name}(Inf)")
+
+                if nan_params and rank == 0:  # 只在rank0记录
+                    logger.error(f"参数变成NaN/Inf: {', '.join(nan_params[:5])}{'...' if len(nan_params) > 5 else ''}")
+                    logger.error(f"在 epoch {epoch}, batch {batch_idx} 参数更新后发现异常")
+                    # 检查梯度范数
+                    grad_norm = torch.nn.utils.clip_grad_norm_(clip_params, float('inf'))
+                    logger.error(f"梯度范数: {grad_norm:.6f}")
+                    # 可以选择提前终止或者重置参数
                 
             optimizer.zero_grad(set_to_none=True)
         
@@ -835,9 +841,6 @@ def main(resume_path=None):
             if hasattr(data, 'x') and data.x is not None and data.x.numel() > 0:
                 cols = min(2, data.x.size(1))
                 parts.append(data.x[:, :cols].detach().cpu().contiguous().numpy().tobytes())
-            # 若存在 pq_prior，也可作为场景签名的一部分
-            if hasattr(data, 'pq_prior') and data.pq_prior is not None and data.pq_prior.numel() > 0:
-                parts.append(data.pq_prior.detach().cpu().contiguous().numpy().tobytes())
             ids.append(_hash_parts(parts))
         return ids
 

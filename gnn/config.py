@@ -6,13 +6,16 @@ import os
 from datetime import datetime
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 class Config:
     """集中管理所有超参数（简化版）"""
     
     # ========== 数据配置 ==========
     case = 'ieee500_mixed'  # 数据集: ieee57/ieee118/ieee300
     # 指向你的已生成数据集根目录（包含 train/val/test 子目录）
-    data_dir = '/Users/jiashen/Desktop/code/data/ieee500_k456'
+    data_dir = os.path.join(REPO_ROOT, 'data', 'ieee500_k456')
     
     # ========== 模型配置 ==========
     hidden_dim = 64    # 隐藏层维度
@@ -47,6 +50,7 @@ class Config:
     weight_decay = 5e-4   # 降低权重衰减，避免过度正则化
     patience = 10  # 早停耐心值（更严格）
     grad_clip = 5.0  # 提高梯度裁剪阈值，允许更大的梯度更新
+    enable_nan_param_check = False  # 仅在调试时启用参数NaN检查
     
     # 混合精度和梯度累积
     use_amp = True  # 启用自动混合精度训练
@@ -71,9 +75,9 @@ class Config:
     
     # ========== 日志配置 ==========
     exp_name = f"bcgnn_simple_{case}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    log_dir = f'logs/{exp_name}'
-    checkpoint_dir = f'checkpoints/{exp_name}'
-    tensorboard_dir = f'runs/{exp_name}'
+    log_dir = os.path.join(REPO_ROOT, 'logs', exp_name)
+    checkpoint_dir = os.path.join(REPO_ROOT, 'checkpoints', exp_name)
+    tensorboard_dir = os.path.join(REPO_ROOT, 'runs', exp_name)
     
     # 日志频率
     log_interval = 10  # 每N个batch记录一次

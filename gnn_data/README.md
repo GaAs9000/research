@@ -16,21 +16,18 @@ BC-GNN 数据生成（V1.1：边界 P/Q 预测）
 - 节点特征 `x [N,20]`：
   - 基础4列：`[P_load, Q_load, theta_dcpf, is_coupling_bus]`（均为 p.u.；`theta_dcpf` 适度裁剪）
   - 发电机6列：`[P_gen, Q_gen, P_gen_min, P_gen_max, Q_gen_min, Q_gen_max]`（按母线聚合，支持区域守恒损失）
-  - 预计算特征10列：`[B_decayed, S_decayed, feat_B_0, feat_B_1, feat_B_2, feat_B_3, feat_S_0, feat_S_1, feat_S_2, feat_S_3]`（Q先验已移除）
+  - 预计算特征10列：`[B_decayed, S_decayed, feat_B_0, feat_B_1, feat_B_2, feat_B_3, feat_S_0, feat_S_1, feat_S_2, feat_S_3]`
 - 边 `edge_index [2,E]`：物理边双向展开
-- 边特征 `edge_attr [E,8]`：
-  - `[R, X_eff, S_max, is_tie, edge_type, shift, Pdc, Pdc_ratio]`
+- 边特征 `edge_attr [E,10]`：
+  - `[R, X_eff, S_max, is_tie, edge_type, shift, Pdc, Pdc_ratio, b_fr, b_to]`
   - AC 线路：`edge_type=0, shift=0, X_eff=|x|`
   - 变压器：`edge_type=1, X_eff=|x|/|tap|, shift` 来自 JSON（若 |shift|>π 兜底按度→弧度）
-  - `Pdc` 由 DCPF 计算（反向边取相反数），`Pdc_ratio=|Pdc|/S_max`（裁剪至 [0,2]）
+  - `Pdc` 由 DCPF 计算（反向边取相反数），`Pdc_ratio=|Pdc|/S_max`（裁剪至 [0,2]），`b_fr/b_to` 为 π 模型充电电纳
 - 分区/边界对象：`partition [N]`，`tie_corridors [C,2] (u<v)`，`tie_lines [L,3] (u,v,cid)`，`tie_buses [B]`，
   `tie_edge_corridor [E]`（每条有向边关联的走廊 id，非联络线为 -1；用于 S_max 走廊分组聚合）。
 - 标签：
   - `y_corridor_pfqt [C,4]`：每个跨区走廊 (u<v) 的端口级 `(pf_u,pt_v,qf_u,qt_v)`，按并联回线聚合；若回线记录方向为 `(v→u)`，则交换使用 `(pt,qt)` 与 `(pf,qf)`；单位 p.u.
   - `y_bus_pq [B,2]`：由端口聚合得到的母线本端净注入：对走廊 `(u→v)`，在母线侧记 `u:(-Pu,-Qu)`、`v:(+Pv,+Qv)`；单位 p.u.
-- 先验：
-  - `pq_prior [B,2]`：默认仅提供 P 先验（第二列 Q_prior=0）。P 先验由 DCPF 的 `Pdc` 沿联络线方向聚合到母线本端净注入口径得到，单位 p.u.；
-    训练时采用"残差式 + dropout"使用。
 - 预计算特征：
   - `ring_decayed [B,2]`：环特征（仅在边界母线非零），支持邻域无功能力代理
   - `feat_B [B,4]`：导纳富集特征（K=3环）
@@ -82,4 +79,4 @@ DCPF 说明
 ----
 - 本模块不包含训练/评估代码与示例/测试脚本。
 - 分区算法仅提供构造式生长一条路径，避免多实现引起歧义。
-- 本数据与训练侧（gnn）严格对齐：以端口为主监督（`y_end_pq`），母线由端口聚合得到（`y_bus_pq`）；`pq_prior` 作为 P 先验（Q_prior=0）。容量守护以端口差分与 `Smax_corr` 评估。
+- 本数据与训练侧（gnn）严格对齐：以端口为主监督（`y_end_pq`），母线由端口聚合得到（`y_bus_pq`）。容量守护以端口差分与 `Smax_corr` 评估。

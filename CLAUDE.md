@@ -83,9 +83,6 @@ python tools/two_stage_acopf.py --json acopf/raw_data/example_2.json --model <ch
 - PQ route: `y_corridor_pfqt [C,4]` (port flows `[pf_u, pt_v, qf_u, qt_v]` in p.u.), `y_bus_pq [B,2]` (bus net injections)
 - V-θ route: `y_bus_V [B]` (boundary bus voltages in p.u.), `y_edge_sincos [E_tie,2]` (tie-line angle differences as [sin(Δθ), cos(Δθ)]), `y_edge_pq [E_tie,4]` (for reconstruction validation)
 
-**Prior**:
-- `pq_prior [B,2]`: P prior from DCPF (column 2 Q_prior=0), used with residual + dropout
-
 ## Training Configuration (gnn/config.py)
 
 **Route selection** (choose one):
@@ -103,10 +100,8 @@ python tools/two_stage_acopf.py --json acopf/raw_data/example_2.json --model <ch
 - Bus consistency: Aggregate port predictions to bus-level and compare with y_bus_pq
 - Regional conservation: Internal generation + boundary net injection ≈ 0
 
-**Prior and features**:
-- `pq_use_p_prior=True, pq_use_q_prior=False`: Use P prior only (residual mode)
-- `pq_prior_dropout=0.2`: Dropout on prior channel to prevent overfitting
-- `ring_k=3, ring_decay=0.5, ring_use_decayed=True`: Ring-aggregated features (K=3 hops)
+**Feature enhancements**:
+- Ring summaries: `ring_k=3, ring_decay=0.5, ring_use_decayed=True` (K-hop decayed aggregates on boundary buses)
 
 **Acceleration** (default enabled):
 - AMP with bf16
